@@ -4,11 +4,12 @@ Send articles to your kindle.
 
 ## Why?
 
-There are many apps (e.g. Send to Kindle browser extension by Amazon or Tinderizer bookmarklet) which do the same. The problem begins if the article has many images in it - they are often not included. With this script, all the images are attached and finally you can read articles from waitbutwhy.com on your Kindle.
+There are many apps (e.g. Send to Kindle browser extension by Amazon or Tinderizer bookmarklet) which do the same. The problem begins if the article has many images in it -- they are often not included. With this script, all the images are attached and finally you can read articles from waitbutwhy.com on your Kindle.
 
 ## Dependencies
-* [python-readability](https://github.com/buriy/python-readability) - it handles scraping article from the webpage and is pretty   neat
-* [yagmail](https://github.com/kootenpv/yagmail) - sending emails from gmail
+* [kindlegen](https://www.amazon.com/gp/feature.html?ie=UTF8&docId=1000765211) -- converts html to mobi. Download and put `kindlegen.exe` in the same directory as the script (in Linux modify line 95 of `web2kindle.py`: replace `kindlegen.exe` with `kindlegen` -- I will correct this inconvenience soon)
+* [python-readability](https://github.com/buriy/python-readability) -- handles scraping article from the webpage and is pretty   neat
+* [yagmail](https://github.com/kootenpv/yagmail) -- sending emails from gmail
 
 ## Preparation
 First of all, go to [Amazon's  Manage Your Content and Devices ](amazon.com/mn/dcw/myx.html). In `Settings` tab find `Approved Personal Document E-mail List` and add your gmail address. Also note your kindle address from `Send-to-Kindle E-Mail Settings` section.
