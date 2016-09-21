@@ -37,14 +37,12 @@ or delete this file. If you do, you will be prompted for gmail login and kindle 
   ```
   python web2kindle.py -u http://article-url.com -s
   ```
-  You will be prompted for your gmail password. If you use 2 factor authentication (and you should), you must generate [App Pasword](#app-password).
+  You will be prompted for your gmail password. If you use 2 factor authentication (and you should), you must generate [App Pasword](#app-password). You will be asked if you want to store your password in a keyring (operating system's place to store passwords). If you don't want, type `n`, otherwise type `y`.
 
   (Sometimes Google can block web2kindle from using your account. If it's the case, consider enabling 2 factor authentication and generating App Password)
 
 ### App Pasword
 
-Visit https://support.google.com/mail/answer/185833 -> "How to generate an App password"
+Visit https://security.google.com/settings/security/apppasswords. At the bottom, click __Select app__, choose _Other_ and enter whatever name you want. You will get a password.
 
-At the bottom, click __Select app__, choose _Other_ and enter whatever name you want. You will get a password.
-
-Go to https://security.google.com/settings/security/apppasswords for more details.
+Go to https://support.google.com/mail/answer/185833 for more details.
