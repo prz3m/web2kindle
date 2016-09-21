@@ -43,8 +43,6 @@ or delete this file. If you do, you will be prompted for gmail login and kindle 
 
 ### App Pasword
 
-Visit https://support.google.com/mail/answer/185833 -> "How to generate an App password"
-
-At the bottom, click __Select app__, choose _Other_ and enter whatever name you want. You will get a password.
+Visit https://support.google.com/mail/answer/185833 At the bottom, click __Select app__, choose _Other_ and enter whatever name you want. You will get a password.
 
 Go to https://security.google.com/settings/security/apppasswords for more details.
