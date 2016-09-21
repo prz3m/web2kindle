@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 import argparse
 import configparser
 import yagmail
+from smtplib import SMTPAuthenticationError
 
 parser = argparse.ArgumentParser(
     description="""
@@ -58,9 +59,14 @@ class Converter:
         self.add_head()
         self.insert_title()
         self.save_html()
-        self.convert_to_mobi()
+        try:
+            self.convert_to_mobi()
+        except FileNotFoundError:
+            print("""ERROR: cannot find kindlegen
+                  Please download kindlegen from Amazon""")
         if self.send_by_mail:
             self.send_to_kindle()
+
 
     def process_images(self):
         for image in self.soup.findAll("img"):
@@ -92,7 +98,13 @@ class Converter:
 
     def convert_to_mobi(self):
         CREATE_NO_WINDOW = 0x08000000
-        subprocess.call(["kindlegen.exe", self.file_name + ".html"],
+        if os.path.isfile("kindlegen.exe"):
+            kindlegen_path = "kindlegen.exe"
+        elif os.path.isfile("kindlegen"):
+            kindlegen_path = "kindlegen"
+        else:
+            raise FileNotFoundError("cannot find kindlegen")
+        subprocess.call([kindlegen_path, self.file_name + ".html"],
                         creationflags=CREATE_NO_WINDOW)
 
     def send_to_kindle(self):
@@ -107,7 +119,12 @@ class Converter:
         else:
             kindle = input("kindle address: ")
 
-        yag = yagmail.SMTP(login)
+        try:
+            yag = yagmail.SMTP(login)
+        except SMTPAuthenticationError:
+            print("Wrong password, try again...")
+            self.send_to_kindle()
+
         yag.send(to=kindle, contents=[self.file_name + ".mobi"])
 
 if __name__ == "__main__":
