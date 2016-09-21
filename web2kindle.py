@@ -8,6 +8,9 @@ import argparse
 import configparser
 import yagmail
 from smtplib import SMTPAuthenticationError
+from urllib.parse import urlparse
+from shutil import copyfile
+from PIL import Image
 
 parser = argparse.ArgumentParser(
     description="""
@@ -26,9 +29,12 @@ class Converter:
         self.path = path
         if url:
             self.url = url.split("?")[0].strip("/")
+            self.parent_path = "/".join(self.url.split("/")[:-1])
             self.file_name = self.url.split("/")[-1].split(".")[0]
         elif path:
-            self.path = path.strip("/")
+            self.path = path.replace('\\','/')
+            self.path = self.path.strip("/")
+            self.parent_path = "/".join(self.path.split("/")[:-1])
             self.file_name = self.path.split("/")[-1].split(".")[0]
         else:
             raise Exception("what should I convert dumbass?")
@@ -67,14 +73,27 @@ class Converter:
         if self.send_by_mail:
             self.send_to_kindle()
 
-
     def process_images(self):
         for image in self.soup.findAll("img"):
+            local_file = False
+            if len(urlparse(image["src"]).scheme) == 0:
+                image["src"] = self.parent_path + "/" + image["src"]
+                if self.path is not None:
+                    local_file = True
             local_name = self.img_directory + image["src"].split("/")[-1]
-            urllib.request.urlretrieve(image["src"], local_name)
+            if not local_file:
+                urllib.request.urlretrieve(image["src"], local_name)
+            else:
+                copyfile(image["src"], local_name)
             image["src"] = local_name
+            self.resize_image(image["src"])
             image.attrs = {k: v for k, v in image.attrs.items()
                            if k in ["src", "alt"]}
+
+    def resize_image(self, img_path):
+        with Image.open(img_path) as im:
+            im.thumbnail((800, 800), Image.ANTIALIAS)
+            im.save(img_path)
 
     def add_head(self):
         head_tag = self.soup.new_tag('head')
