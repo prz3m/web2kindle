@@ -9,7 +9,7 @@ import configparser
 import yagmail
 from smtplib import SMTPAuthenticationError
 from urllib.parse import urlparse
-from shutil import copyfile
+from shutil import copyfile, rmtree
 from PIL import Image
 
 parser = argparse.ArgumentParser(
@@ -19,20 +19,24 @@ group = parser.add_mutually_exclusive_group(required=True)
 group.add_argument("-u", "--url", help='webpage url', type=str)
 group.add_argument("-p", "--path", help='saved webpage path', type=str)
 parser.add_argument("-s",  "--send", help="send to kindle", action="store_true")
+parser.add_argument("-c",  "--clean", help="delete created files after sending", action="store_true")
+
 args = parser.parse_args()
 
 
 class Converter:
-    def __init__(self, url=None, path=None, send_by_mail=False):
+    def __init__(self, url=None, path=None, send_by_mail=False, clean=False):
         self.send_by_mail = send_by_mail
+        self.clean = clean
         self.url = url
         self.path = path
+
         if url:
             self.url = url.split("?")[0].strip("/")
             self.parent_path = "/".join(self.url.split("/")[:-1])
             self.file_name = self.url.split("/")[-1].split(".")[0]
         elif path:
-            self.path = path.replace('\\','/')
+            self.path = path.replace('\\', '/')
             self.path = self.path.strip("/")
             self.parent_path = "/".join(self.path.split("/")[:-1])
             self.file_name = self.path.split("/")[-1].split(".")[0]
@@ -63,7 +67,8 @@ class Converter:
 
         self.process_images()
         self.add_head()
-        self.insert_title()
+        if len(self.soup.find_all("h1")) == 0:
+            self.insert_title()
         self.save_html()
         try:
             self.convert_to_mobi()
@@ -72,15 +77,18 @@ class Converter:
                   Please download kindlegen from Amazon""")
         if self.send_by_mail:
             self.send_to_kindle()
+        if self.clean:
+            self.do_cleaning()
 
     def process_images(self):
-        for image in self.soup.findAll("img"):
+        for image in self.soup.find_all("img"):
             local_file = False
             if len(urlparse(image["src"]).scheme) == 0:
                 image["src"] = self.parent_path + "/" + image["src"]
                 if self.path is not None:
                     local_file = True
             local_name = self.img_directory + image["src"].split("/")[-1]
+            local_name = local_name.replace("+", "_")
             if not local_file:
                 urllib.request.urlretrieve(image["src"], local_name)
             else:
@@ -146,6 +154,11 @@ class Converter:
 
         yag.send(to=kindle, contents=[self.file_name + ".mobi"])
 
+    def do_cleaning(self):
+        os.remove(self.file_name + ".mobi")
+        os.remove(self.file_name + ".html")
+        rmtree(self.file_name + "_img")
+
 if __name__ == "__main__":
-    c = Converter(args.url, args.path, send_by_mail=args.send)
+    c = Converter(args.url, args.path, args.send, args.clean)
     c.convert()
