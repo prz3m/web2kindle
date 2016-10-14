@@ -123,22 +123,24 @@ class Converter:
             kindlegen_path = "kindlegen"
         else:
             raise FileNotFoundError("cannot find kindlegen")
-        subprocess.call([kindlegen_path, self.file_name + ".html"],
-                        creationflags=CREATE_NO_WINDOW)
+        p = subprocess.call([kindlegen_path, self.file_name + ".html"],
+                             creationflags=CREATE_NO_WINDOW)
+        p.wait()
 
     def send_to_kindle(self):
-        config = configparser.ConfigParser()
-        config.read("web2kindle.conf")
-        if "web2kindle" in config.keys() and "gmail_login" in config["web2kindle"]:
-            login = config["web2kindle"]["gmail_login"]
-        else:
-            login = input("gmail login: ")
-        if "web2kindle" in config.keys() and "kindle_address" in config["web2kindle"]:
-            kindle = config["web2kindle"]["kindle_address"]
-        else:
-            kindle = input("kindle address: ")
+        # config = configparser.ConfigParser()
+        # config.read("web2kindle.conf")
+        # if "web2kindle" in config.keys() and "gmail_login" in config["web2kindle"]:
+        #     login = config["web2kindle"]["gmail_login"]
+        # else:
+        #     login = input("gmail login: ")
+        # if "web2kindle" in config.keys() and "kindle_address" in config["web2kindle"]:
+        #     kindle = config["web2kindle"]["kindle_address"]
+        # else:
+        #     kindle = input("kindle address: ")
 
-        subprocess.call(["python", "send.py", login, self.file_name, kindle])
+        p = subprocess.call(["python", "send.py", self.file_name])
+        p.wait()
         # try:
         #     # p = Process(target=yagmail.SMTP, args=(login,))
         #     # p.start()
