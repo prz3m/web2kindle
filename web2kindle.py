@@ -123,7 +123,7 @@ class Converter:
             kindlegen_path = "kindlegen"
         else:
             raise FileNotFoundError("cannot find kindlegen")
-        p = subprocess.call([kindlegen_path, self.file_name + ".html"],
+        p = subprocess.Popen([kindlegen_path, self.file_name + ".html"],
                              creationflags=CREATE_NO_WINDOW)
         p.wait()
 
@@ -139,7 +139,7 @@ class Converter:
         # else:
         #     kindle = input("kindle address: ")
 
-        p = subprocess.call(["python", "send.py", self.file_name])
+        p = subprocess.Popen(["python", "send.py", self.file_name])
         p.wait()
         # try:
         #     # p = Process(target=yagmail.SMTP, args=(login,))
