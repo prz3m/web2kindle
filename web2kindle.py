@@ -75,6 +75,9 @@ class Converter:
     def process_images(self):
         for image in self.soup.find_all("img"):
             local_file = False
+            image["src"] = image["src"].strip("//")
+            if "." in image["src"].split("/")[0]:
+                image["src"] = "http://" + image["src"]
             if len(urlparse(image["src"]).scheme) == 0:
                 image["src"] = self.parent_path + "/" + image["src"]
                 if self.path is not None:
@@ -82,7 +85,12 @@ class Converter:
             local_name = self.img_directory + image["src"].split("/")[-1]
             local_name = local_name.replace("+", "_")
             if not local_file:
-                urllib.request.urlretrieve(image["src"], local_name)
+                try:
+                    urllib.request.urlretrieve(image["src"], local_name)
+                except Exception as e:
+                    print(image["src"])
+                    print(e)
+
             else:
                 copyfile(image["src"], local_name)
             image["src"] = local_name
