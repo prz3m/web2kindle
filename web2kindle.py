@@ -2,6 +2,7 @@ import requests
 import urllib.request
 import subprocess
 import os
+import time
 from readability import Document
 from bs4 import BeautifulSoup
 import argparse
@@ -12,8 +13,6 @@ from urllib.parse import urlparse
 from shutil import copyfile, rmtree
 from PIL import Image
 from multiprocessing import Process
-
-
 
 
 class Converter:
@@ -75,6 +74,7 @@ class Converter:
     def process_images(self):
         for image in self.soup.find_all("img"):
             local_file = False
+            # print("path: " + image["src"])
             image["src"] = image["src"].strip("//")
             if "." in image["src"].split("/")[0]:
                 image["src"] = "http://" + image["src"]
@@ -82,18 +82,24 @@ class Converter:
                 image["src"] = self.parent_path + "/" + image["src"]
                 if self.path is not None:
                     local_file = True
-            local_name = self.img_directory + image["src"].split("/")[-1]
+            local_name = image["src"].split("/")[-1]
             local_name = local_name.replace("+", "_")
+
+            if "." not in local_name:
+                local_name = "{}.{}".format(int(time.time()*10**5), local_name)
+
+            local_path = self.img_directory + local_name
+            # print(local_name)
             if not local_file:
                 try:
-                    urllib.request.urlretrieve(image["src"], local_name)
+                    urllib.request.urlretrieve(image["src"], local_path)
                 except Exception as e:
                     print(image["src"])
                     print(e)
 
             else:
-                copyfile(image["src"], local_name)
-            image["src"] = local_name
+                copyfile(image["src"], local_path)
+            image["src"] = local_path
             self.resize_image(image["src"])
             image.attrs = {k: v for k, v in image.attrs.items()
                            if k in ["src", "alt"]}
