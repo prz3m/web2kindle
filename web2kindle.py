@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 from shutil import copyfile, rmtree
 from PIL import Image
 from multiprocessing import Process
+import threading
 
 
 class Converter:
@@ -152,6 +153,10 @@ class Converter:
         #     kindle = config["web2kindle"]["kindle_address"]
         # else:
         #     kindle = input("kindle address: ")
+        #
+        # t = threading.Thread(target=send, args=(login, self.file_name, kindle))
+        # t.start()
+        # t.join()
 
         p = subprocess.Popen(["python", "send.py", self.file_name])
         p.wait()
@@ -171,6 +176,22 @@ class Converter:
         os.remove(self.file_name + ".mobi")
         os.remove(self.file_name + ".html")
         rmtree(self.file_name + "_img")
+
+
+def try_login(login):
+    try:
+        yag = yagmail.SMTP(login)
+    except SMTPAuthenticationError:
+        print("Wrong password, try again")
+        try_login(login)
+
+    return yag
+
+
+def send(login, file_name, kindle):
+    yag = try_login(login)
+    yag.send(to=kindle, contents=[file_name + ".mobi"])
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
