@@ -9,7 +9,7 @@ import argparse
 import configparser
 import yagmail
 from smtplib import SMTPAuthenticationError
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 from shutil import copyfile, rmtree
 from PIL import Image
 from multiprocessing import Process
@@ -23,15 +23,21 @@ class Converter:
         self.url = url
         self.path = path
 
+        self.encoding = "utf-8"
+
         if url:
             self.url = url.split("?")[0].strip("/")
-            self.parent_path = "/".join(self.url.split("/")[:-1])
-            self.file_name = self.url.split("/")[-1].split(".")[0]
+            # print("url: {}".format(self.url))
+            # self.parent_path = "/".join(self.url.split("/")[:-1])
+            self.parent_path = urlparse(self.url).scheme + "://" + urlparse(self.url).netloc
+            # print(self.url.split("/"))
+            print("parent path: {}".format(self.parent_path))
+            self.file_name = "w2k_" + self.url.split("/")[-1].split(".")[0]
         elif path:
             self.path = path.replace('\\', '/')
             self.path = self.path.strip("/")
             self.parent_path = "/".join(self.path.split("/")[:-1])
-            self.file_name = self.path.split("/")[-1].split(".")[0]
+            self.file_name = "w2k_" + self.path.split("/")[-1].split(".")[0]
         else:
             raise Exception("what should I convert dumbass?")
 
@@ -47,15 +53,24 @@ class Converter:
     def convert(self):
         if self.url:
             response = requests.get(self.url, headers=self.headers)
-            response.encoding = "utf-8"
-            doc = Document(response.text.encode("utf-8"))
+            print("encoding: {}".format(response.encoding))
+            print("apparent_encoding: {}".format(response.apparent_encoding))
+            response.encoding = response.apparent_encoding
+            # self.encoding = response.apparent_encoding
+            # doc = Document(response.text.encode("utf-8"))
+            # print(response.text)
+            # print(response.text.encode(self.encoding)[:400])
+            # print("====")
+            # print(response.text[:400])
+            doc = Document(response.text)
         elif self.path:
             with open(self.path, 'rb') as f:
                 doc = Document(f.read())
 
         self.title = doc.title() if len(doc.title()) > 0 else "Awesome article"
 
-        self.soup = BeautifulSoup(doc.summary(), 'html.parser')
+        # print(doc.summary().encode("utf-8"))
+        self.soup = BeautifulSoup(doc.summary().encode("utf-8"), 'html.parser')
 
         self.process_images()
         self.add_head()
@@ -75,12 +90,13 @@ class Converter:
     def process_images(self):
         for image in self.soup.find_all("img"):
             local_file = False
-            # print("path: " + image["src"])
+
             image["src"] = image["src"].strip("//")
             if "." in image["src"].split("/")[0]:
                 image["src"] = "http://" + image["src"]
             if len(urlparse(image["src"]).scheme) == 0:
-                image["src"] = self.parent_path + "/" + image["src"]
+                # image["src"] = self.parent_path + "/" + image["src"]
+                image["src"] = urljoin(self.parent_path, image["src"])
                 if self.path is not None:
                     local_file = True
             local_name = image["src"].split("/")[-1]
@@ -115,7 +131,7 @@ class Converter:
         self.soup.html.insert(0, head_tag)
         meta_tag = self.soup.new_tag('meta')
         meta_tag.attrs["http-equiv"] = "Content-Type"
-        meta_tag.attrs["content"] = "text/html;charset=utf-8"
+        meta_tag.attrs["content"] = "text/html;charset=" + self.encoding
         self.soup.head.insert(0, meta_tag)
         title_tag = self.soup.new_tag('title')
         title_tag.string = self.title
@@ -128,6 +144,7 @@ class Converter:
 
     def save_html(self):
         with open(self.file_name + ".html", "wb") as f:
+            # print(self.soup.prettify().encode("utf-8")[:800])
             f.write(self.soup.prettify().encode("utf-8"))
 
     def convert_to_mobi(self):
@@ -159,6 +176,7 @@ class Converter:
         # t.join()
 
         p = subprocess.Popen(["python", "send.py", self.file_name])
+        # p = subprocess.Popen(["send.exe", self.file_name])
         p.wait()
         # try:
         #     # p = Process(target=yagmail.SMTP, args=(login,))

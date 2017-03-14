@@ -6,6 +6,8 @@ from settings import Ui_Settings
 from PyQt5.QtCore import QThread
 from PyQt5.QtCore import Qt
 from PyQt5 import QtCore
+from PyQt5 import QtGui
+import os.path as osp
 # from PyQt5 import QtCore
 
 from web2kindle import Converter
@@ -32,7 +34,7 @@ class Form(QMainWindow, Ui_Dialog):
         # Set up the user interface from Designer.
         self.setupUi(self)
         self.setFixedSize(380, 150)
-
+        self.setWindowIcon(QtGui.QIcon(osp.join(osp.dirname(osp.abspath(__file__)),"w2k.ico")))
         self.folder.hide()
         self.go_button.clicked.connect(self.do_stuff)
         self.file.clicked.connect(self.folder.show)
@@ -44,8 +46,8 @@ class Form(QMainWindow, Ui_Dialog):
 
         # Init QSystemTrayIcon
         self.tray_icon = QSystemTrayIcon(self)
-        self.tray_icon.setIcon(self.style().standardIcon(QStyle.SP_ComputerIcon))
-
+        # self.tray_icon.setIcon(self.style().standardIcon(QStyle.SP_ComputerIcon))
+        self.tray_icon.setIcon(QtGui.QIcon(osp.join(osp.dirname(osp.abspath(__file__)),"w2k.ico")))
         self.t = ThreadConvert(None)
 
         self.t.finished.connect(self.cleanup_after_stuff)
