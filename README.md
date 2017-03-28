@@ -10,7 +10,7 @@ There are many apps (e.g. Send to Kindle browser extension by Amazon or Tinderiz
 * [kindlegen](https://www.amazon.com/gp/feature.html?ie=UTF8&docId=1000765211) - converts html to mobi. Download and put `kindlegen.exe` (or `kindlegen` on Linux) in the same directory as the script.
 * [python-readability](https://github.com/buriy/python-readability) - handles scraping article from the webpage and is pretty   neat
 * [yagmail](https://github.com/kootenpv/yagmail) - sending emails from gmail
-* PyQT - if you wish will use GUI
+* PyQT - if you will use GUI
 
 ## Preparation
 ### Kindle account
@@ -32,6 +32,8 @@ If you haven't already, enable 2 factor authentication. Then visit https://secur
 * click _Go!_ button
 * A progress bar will appear and after some time black console window prompting for your gmail password. Enter app password which you've generated. You will be asked if you want to store your password in a keyring (operating system's place to store passwords), so that you will not have to enter it the next time. If you don't want, type `n`, otherwise type `y`.
 * That's all!
+
+The program minimized itself to tray.
   
 ### command line
 Firstly, modify web2kindle.conf file:
