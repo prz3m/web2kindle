@@ -14,6 +14,7 @@ from shutil import copyfile, rmtree
 from PIL import Image
 from multiprocessing import Process
 import threading
+import re
 
 
 class Converter:
@@ -53,24 +54,35 @@ class Converter:
     def convert(self):
         if self.url:
             response = requests.get(self.url, headers=self.headers)
-            print("encoding: {}".format(response.encoding))
-            print("apparent_encoding: {}".format(response.apparent_encoding))
-            response.encoding = response.apparent_encoding
+            # print("encoding: {}".format(response.encoding))
+            #
+            # if response.encoding != "utf-8":
+            #     print("apparent_encoding: {}".format(response.apparent_encoding))
+            #     response.encoding = response.apparent_encoding
             # self.encoding = response.apparent_encoding
             # doc = Document(response.text.encode("utf-8"))
             # print(response.text)
             # print(response.text.encode(self.encoding)[:400])
             # print("====")
             # print(response.text[:400])
-            doc = Document(response.text)
+            content = response.content
+
         elif self.path:
             with open(self.path, 'rb') as f:
-                doc = Document(f.read())
+                content = f.read()
+                # doc = Document(f.read())
+
+        soup = BeautifulSoup(content, 'html.parser')
+        try:
+            self.encoding = get_encoding(soup)
+        except ValueError:
+            self.encoding = soup.original_encoding
+        doc = Document(content.decode(self.encoding, "ignore"))
 
         self.title = doc.title() if len(doc.title()) > 0 else "Awesome article"
 
         # print(doc.summary().encode("utf-8"))
-        self.soup = BeautifulSoup(doc.summary().encode("utf-8"), 'html.parser')
+        self.soup = BeautifulSoup(doc.summary(), 'html.parser')
 
         self.process_images()
         self.add_head()
@@ -131,16 +143,22 @@ class Converter:
         self.soup.html.insert(0, head_tag)
         meta_tag = self.soup.new_tag('meta')
         meta_tag.attrs["http-equiv"] = "Content-Type"
-        meta_tag.attrs["content"] = "text/html;charset=" + self.encoding
+        # meta_tag.attrs["content"] = "text/html;charset=" + self.encoding
+        meta_tag.attrs["content"] = "text/html;charset=utf-8"
         self.soup.head.insert(0, meta_tag)
         title_tag = self.soup.new_tag('title')
         title_tag.string = self.title
         self.soup.head.insert(1, title_tag)
 
     def insert_title(self):
-        h1_tag = self.soup.new_tag('h1')
+        h1_tag = self.soup.new_tag("h1")
         h1_tag.string = self.title
         self.soup.body.insert(0, h1_tag)
+        if self.url:
+            tag = self.soup.new_tag("a", href=self.url)
+            tag.string = self.url
+            self.soup.body.append(self.soup.new_tag("hr"))
+            self.soup.body.append(tag)
 
     def save_html(self):
         with open(self.file_name + ".html", "wb") as f:
@@ -209,6 +227,24 @@ def try_login(login):
 def send(login, file_name, kindle):
     yag = try_login(login)
     yag.send(to=kindle, contents=[file_name + ".mobi"])
+
+
+def get_encoding(soup):
+    """
+    source: http://stackoverflow.com/a/18359215
+    returns encoding from html document's (BeautifulSoup object) meta tags
+    """
+    encod = soup.meta.get('charset')
+    if encod is None:
+        encod = soup.meta.get('content-type')
+        if encod is None:
+            content = soup.meta.get('content')
+            match = re.search('charset=(.*)', content, re.IGNORECASE)
+            if match:
+                encod = match.group(1)
+            else:
+                raise ValueError('unable to find encoding')
+    return encod
 
 
 if __name__ == "__main__":
