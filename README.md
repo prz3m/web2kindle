@@ -4,10 +4,16 @@ Send articles to your kindle.
 
 ## Why?
 
-There are many apps (e.g. Send to Kindle browser extension by Amazon or Tinderizer bookmarklet) which do the same. The problem begins if the article has many images in it - they are often not included. With this script, all the images are attached.
+There are many apps (e.g. Send to Kindle browser extension by Amazon or Tinderizer bookmarklet) which do the same. The problem begins if the article has many images in it - they are often not included. With this script, all images are attached.
+
+## What you need
+* [kindlegen](https://www.amazon.com/gp/feature.html?ie=UTF8&docId=1000765211) - converts html to mobi. Download and put `kindlegen.exe` (or `kindlegen` on Linux) in the same directory as the program.
+* Gmail account with 2 factor authentication
+
+On Windows, you can download executable version from https://github.com/prz3m/web2kindle/releases.
+On other OSes (or if you want to run from source), install dependecies from the list below.
 
 ## Dependencies
-* [kindlegen](https://www.amazon.com/gp/feature.html?ie=UTF8&docId=1000765211) - converts html to mobi. Download and put `kindlegen.exe` (or `kindlegen` on Linux) in the same directory as the script.
 * [python-readability](https://github.com/buriy/python-readability) - handles scraping article from the webpage and is pretty   neat
 * [yagmail](https://github.com/kootenpv/yagmail) - sending emails from gmail
 * PyQT - if you will use GUI
@@ -22,7 +28,8 @@ If you haven't already, enable 2 factor authentication. Then visit https://secur
 
 ## Usage
 ### GUI
-* run
+* On Windows, download latest release from https://github.com/prz3m/web2kindle/releases, unpack zip and run web2kindle.exe
+* Or if you prefer running from source, run
   ```
   python main.py
   ```
@@ -33,7 +40,7 @@ If you haven't already, enable 2 factor authentication. Then visit https://secur
 * A progress bar will appear and after some time black console window prompting for your gmail password. Enter app password which you've generated. You will be asked if you want to store your password in a keyring (operating system's place to store passwords), so that you will not have to enter it the next time. If you don't want, type `n`, otherwise type `y`.
 * That's all!
 
-The program minimized itself to tray.
+The program minimizes itself to tray.
   
 ### command line
 Firstly, modify web2kindle.conf file:
