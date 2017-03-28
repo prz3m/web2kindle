@@ -69,12 +69,11 @@ class Ui_Dialog(object):
 
     def retranslateUi(self, Dialog):
         _translate = QtCore.QCoreApplication.translate
-        Dialog.setWindowTitle(_translate("Dialog", "web2kindle bastard"))
+        Dialog.setWindowTitle(_translate("Dialog", "web2kindle"))
         self.url.setText(_translate("Dialog", "url"))
         self.file.setText(_translate("Dialog", "file"))
         self.folder.setText(_translate("Dialog", "..."))
         self.send.setText(_translate("Dialog", "send"))
         self.clean.setText(_translate("Dialog", "clean"))
         self.pushButton.setText(_translate("Dialog", "Settings..."))
-        self.go_button.setText(_translate("Dialog", "Go motherfucker!"))
-
+        self.go_button.setText(_translate("Dialog", "Go!"))

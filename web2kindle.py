@@ -6,14 +6,11 @@ import time
 from readability import Document
 from bs4 import BeautifulSoup
 import argparse
-import configparser
 import yagmail
 from smtplib import SMTPAuthenticationError
 from urllib.parse import urlparse, urljoin
 from shutil import copyfile, rmtree
 from PIL import Image
-from multiprocessing import Process
-import threading
 import re
 
 
@@ -28,11 +25,7 @@ class Converter:
 
         if url:
             self.url = url.split("?")[0].strip("/")
-            # print("url: {}".format(self.url))
-            # self.parent_path = "/".join(self.url.split("/")[:-1])
             self.parent_path = urlparse(self.url).scheme + "://" + urlparse(self.url).netloc
-            # print(self.url.split("/"))
-            print("parent path: {}".format(self.parent_path))
             self.file_name = "w2k_" + self.url.split("/")[-1].split(".")[0]
         elif path:
             self.path = path.replace('\\', '/')
@@ -40,7 +33,7 @@ class Converter:
             self.parent_path = "/".join(self.path.split("/")[:-1])
             self.file_name = "w2k_" + self.path.split("/")[-1].split(".")[0]
         else:
-            raise Exception("what should I convert dumbass?")
+            raise NothingToConvertError("what should I convert?")
 
         self.img_directory = self.file_name + "_img/"
         if not os.path.exists(self.img_directory):
@@ -54,46 +47,33 @@ class Converter:
     def convert(self):
         if self.url:
             response = requests.get(self.url, headers=self.headers)
-            # print("encoding: {}".format(response.encoding))
-            #
-            # if response.encoding != "utf-8":
-            #     print("apparent_encoding: {}".format(response.apparent_encoding))
-            #     response.encoding = response.apparent_encoding
-            # self.encoding = response.apparent_encoding
-            # doc = Document(response.text.encode("utf-8"))
-            # print(response.text)
-            # print(response.text.encode(self.encoding)[:400])
-            # print("====")
-            # print(response.text[:400])
             content = response.content
 
         elif self.path:
             with open(self.path, 'rb') as f:
                 content = f.read()
-                # doc = Document(f.read())
 
         soup = BeautifulSoup(content, 'html.parser')
         try:
             self.encoding = get_encoding(soup)
         except ValueError:
             self.encoding = soup.original_encoding
+
         doc = Document(content.decode(self.encoding, "ignore"))
 
         self.title = doc.title() if len(doc.title()) > 0 else "Awesome article"
 
-        # print(doc.summary().encode("utf-8"))
         self.soup = BeautifulSoup(doc.summary(), 'html.parser')
 
         self.process_images()
         self.add_head()
         if len(self.soup.find_all("h1")) == 0:
             self.insert_title()
+        if self.url:
+            self.insert_link()
         self.save_html()
-        try:
-            self.convert_to_mobi()
-        except FileNotFoundError:
-            print("""ERROR: cannot find kindlegen
-                  Please download kindlegen from Amazon""")
+
+        self.convert_to_mobi()
         if self.send_by_mail:
             self.send_to_kindle()
         if self.clean:
@@ -118,7 +98,7 @@ class Converter:
                 local_name = "{}.{}".format(int(time.time()*10**5), local_name)
 
             local_path = self.img_directory + local_name
-            # print(local_name)
+
             if not local_file:
                 try:
                     urllib.request.urlretrieve(image["src"], local_path)
@@ -143,7 +123,6 @@ class Converter:
         self.soup.html.insert(0, head_tag)
         meta_tag = self.soup.new_tag('meta')
         meta_tag.attrs["http-equiv"] = "Content-Type"
-        # meta_tag.attrs["content"] = "text/html;charset=" + self.encoding
         meta_tag.attrs["content"] = "text/html;charset=utf-8"
         self.soup.head.insert(0, meta_tag)
         title_tag = self.soup.new_tag('title')
@@ -154,15 +133,15 @@ class Converter:
         h1_tag = self.soup.new_tag("h1")
         h1_tag.string = self.title
         self.soup.body.insert(0, h1_tag)
-        if self.url:
-            tag = self.soup.new_tag("a", href=self.url)
-            tag.string = self.url
-            self.soup.body.append(self.soup.new_tag("hr"))
-            self.soup.body.append(tag)
+
+    def insert_link(self):
+        tag = self.soup.new_tag("a", href=self.url)
+        tag.string = self.url
+        self.soup.body.append(self.soup.new_tag("hr"))
+        self.soup.body.append(tag)
 
     def save_html(self):
         with open(self.file_name + ".html", "wb") as f:
-            # print(self.soup.prettify().encode("utf-8")[:800])
             f.write(self.soup.prettify().encode("utf-8"))
 
     def convert_to_mobi(self):
@@ -172,41 +151,17 @@ class Converter:
         elif os.path.isfile("kindlegen"):
             kindlegen_path = "kindlegen"
         else:
-            raise FileNotFoundError("cannot find kindlegen")
+            raise KindlegenNotFoundError("cannot find kindlegen")
         p = subprocess.Popen([kindlegen_path, self.file_name + ".html"],
                              creationflags=CREATE_NO_WINDOW)
         p.wait()
 
     def send_to_kindle(self):
-        # config = configparser.ConfigParser()
-        # config.read("web2kindle.conf")
-        # if "web2kindle" in config.keys() and "gmail_login" in config["web2kindle"]:
-        #     login = config["web2kindle"]["gmail_login"]
-        # else:
-        #     login = input("gmail login: ")
-        # if "web2kindle" in config.keys() and "kindle_address" in config["web2kindle"]:
-        #     kindle = config["web2kindle"]["kindle_address"]
-        # else:
-        #     kindle = input("kindle address: ")
-        #
-        # t = threading.Thread(target=send, args=(login, self.file_name, kindle))
-        # t.start()
-        # t.join()
-
-        p = subprocess.Popen(["python", "send.py", self.file_name])
-        # p = subprocess.Popen(["send.exe", self.file_name])
+        if os.path.isfile("send.exe"):
+            p = subprocess.Popen(["send.exe", self.file_name])
+        else:
+            p = subprocess.Popen(["python", "send.py", self.file_name])
         p.wait()
-        # try:
-        #     # p = Process(target=yagmail.SMTP, args=(login,))
-        #     # p.start()
-        #     # p.join()
-        #     # yag = p.get()
-        #     yag = yagmail.SMTP(login)
-        # except SMTPAuthenticationError:
-        #     print("Wrong password, try again...")
-        #     self.send_to_kindle()
-        #
-        # yag.send(to=kindle, contents=[self.file_name + ".mobi"])
 
     def do_cleaning(self):
         os.remove(self.file_name + ".mobi")
@@ -218,7 +173,7 @@ def try_login(login):
     try:
         yag = yagmail.SMTP(login)
     except SMTPAuthenticationError:
-        print("Wrong password, try again")
+        print("Wrong password, try again; Ctrl+C to exit")
         try_login(login)
 
     return yag
@@ -245,6 +200,14 @@ def get_encoding(soup):
             else:
                 raise ValueError('unable to find encoding')
     return encod
+
+
+class KindlegenNotFoundError(FileNotFoundError):
+    pass
+
+
+class NothingToConvertError(Exception):
+    pass
 
 
 if __name__ == "__main__":
