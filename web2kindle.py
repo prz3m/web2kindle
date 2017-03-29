@@ -1,5 +1,6 @@
 import requests
 import urllib.request
+import urllib.parse
 import subprocess
 import os
 import time
@@ -8,7 +9,8 @@ from bs4 import BeautifulSoup
 import argparse
 import yagmail
 from smtplib import SMTPAuthenticationError
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urlparse, urljoin, quote, urlsplit
+from urllib.error import HTTPError
 from shutil import copyfile, rmtree
 from PIL import Image
 import re
@@ -64,6 +66,9 @@ class Converter:
         self.title = doc.title() if len(doc.title()) > 0 else "Awesome article"
 
         self.soup = BeautifulSoup(doc.summary(), 'html.parser')
+        # print(self.soup.prettify().encode("utf-8"))
+        #
+        # print("============")
 
         self.process_images()
         self.add_head()
@@ -96,17 +101,20 @@ class Converter:
             if "." not in local_name:
                 local_name = "{}.{}".format(int(time.time()*10**5), local_name)
 
-            local_path = self.img_directory + local_name
+            local_name = local_name.encode("ascii", "ignore").decode("ascii")
+
+            local_path = os.path.join(self.img_directory, local_name[-50:])
 
             if not local_file:
                 try:
-                    urllib.request.urlretrieve(image["src"], local_path)
-                except Exception as e:
-                    print(image["src"])
+                    u = urlsplit(image["src"])
+                    u = u._replace(path=quote(u.path.encode('utf8')))
+                    urllib.request.urlretrieve(u.geturl(), local_path)
+                except HTTPError as e:
                     print(e)
-
             else:
                 copyfile(image["src"], local_path)
+
             image["src"] = local_path
             self.resize_image(image["src"])
             image.attrs = {k: v for k, v in image.attrs.items()
