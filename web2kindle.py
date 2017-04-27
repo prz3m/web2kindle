@@ -13,6 +13,7 @@ from urllib.parse import urlparse, urljoin, quote, urlsplit
 from urllib.error import HTTPError
 from shutil import copyfile, rmtree
 from PIL import Image
+from slugify import slugify_filename  # awesome-slugify
 import re
 
 
@@ -66,9 +67,6 @@ class Converter:
         self.title = doc.title() if len(doc.title()) > 0 else "Awesome article"
 
         self.soup = BeautifulSoup(doc.summary(), 'html.parser')
-        # print(self.soup.prettify().encode("utf-8"))
-        #
-        # print("============")
 
         self.process_images()
         self.add_head()
@@ -96,7 +94,7 @@ class Converter:
                 if self.path is not None:
                     local_file = True
             local_name = image["src"].split("/")[-1]
-            local_name = local_name.replace("+", "_")
+            local_name = slugify_filename(local_name)
 
             if "." not in local_name:
                 local_name = "{}.{}".format(int(time.time()*10**5), local_name)
@@ -123,7 +121,10 @@ class Converter:
     def resize_image(self, img_path):
         with Image.open(img_path) as im:
             im.thumbnail((800, 800), Image.ANTIALIAS)
-            im.save(img_path)
+            try:
+                im.save(img_path)
+            except KeyError:
+                im.save(img_path, format="png")
 
     def add_head(self):
         head_tag = self.soup.new_tag('head')
@@ -133,7 +134,7 @@ class Converter:
         meta_tag.attrs["content"] = "text/html;charset=utf-8"
         self.soup.head.insert(0, meta_tag)
         title_tag = self.soup.new_tag('title')
-        title_tag.string = self.title
+        title_tag.string = "w2k " + self.title
         self.soup.head.insert(1, title_tag)
 
     def insert_title(self):
