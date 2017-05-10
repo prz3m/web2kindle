@@ -109,12 +109,13 @@ class Converter:
                     u = u._replace(path=quote(u.path.encode('utf8')))
                     urllib.request.urlretrieve(u.geturl(), local_path)
                 except HTTPError as e:
-                    print(e)
+                    local_path = "404"
             else:
                 copyfile(image["src"], local_path)
 
             image["src"] = local_path
-            self.resize_image(image["src"])
+            if image["src"] != "404":
+                self.resize_image(image["src"])
             image.attrs = {k: v for k, v in image.attrs.items()
                            if k in ["src", "alt"]}
 
