@@ -141,4 +141,4 @@ cython_debug/
 .vscode/
 documents/
 kindlegen.exe
-requirements2.txt
+web2kindle.conf

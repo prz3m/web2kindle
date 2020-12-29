@@ -16,3 +16,5 @@ soupsieve==2.1
 Unidecode==0.4.21
 urllib3==1.26.2
 yagmail==0.14.245
+fastapi==0.63.0
+uvicorn==0.13.2
