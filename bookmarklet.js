@@ -20,7 +20,9 @@ javascript: (function () {
   })
     .then(function () {
       div.innerHTML = "Success!";
-      setTimeout(() => document.body.removeChild(div), 2000);
+      setTimeout(function () {
+        document.body.removeChild(div);
+      }, 2000);
     })
     .catch(function (e) {
       console.error(e);

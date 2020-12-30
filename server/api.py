@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from web2kindle.web2kindle import Converter
+from web2kindle.converter import Converter
 
 app = FastAPI()
 
@@ -23,6 +23,6 @@ class SendArticlePostRequestModel(BaseModel):
 @app.post("/")
 def send_article_post(page: str, requestBody: SendArticlePostRequestModel):
     print("Sending article from: {}".format(page))
-    c = Converter(document=requestBody.document, url=page, send_by_mail=True)
+    c = Converter(document=requestBody.document, url=page, send_by_mail=False)
     c.convert()
     return "OK"
