@@ -142,3 +142,5 @@ cython_debug/
 documents/
 kindlegen.exe
 web2kindle.conf
+
+*.json

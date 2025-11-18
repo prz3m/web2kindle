@@ -50,7 +50,7 @@ class Converter:
         self.convert_to_mobi()
 
         if self.send_by_mail:
-            send_to_kindle(f"{self.file_name}.mobi")
+            send_to_kindle(f"{self.file_name}.epub")
         if self.clean:
             self.do_cleaning()
 
@@ -73,20 +73,24 @@ class Converter:
 
     def convert_to_mobi(self):
         CREATE_NO_WINDOW = 0x08000000
-        if os.path.isfile("kindlegen.exe"):
-            kindlegen_path = "kindlegen.exe"
-        elif os.path.isfile("kindlegen"):
-            kindlegen_path = "kindlegen"
-        else:
-            raise KindlegenNotFoundError("cannot find kindlegen")
+        # if os.path.isfile("kindlegen.exe"):
+        #     kindlegen_path = "kindlegen.exe"
+        # elif os.path.isfile("kindlegen"):
+        #     kindlegen_path = "kindlegen"
+        # else:
+        #     raise KindlegenNotFoundError("cannot find kindlegen")
+        # p = subprocess.Popen(
+        #     [kindlegen_path, str(self.file_name) + ".html"],
+        #     creationflags=CREATE_NO_WINDOW,
+        # )
         p = subprocess.Popen(
-            [kindlegen_path, str(self.file_name) + ".html"],
-            creationflags=CREATE_NO_WINDOW,
+            ['ebook-convert', str(self.file_name) + ".html", str(self.file_name) + ".epub", "--no-default-epub-cover"],
+            # creationflags=CREATE_NO_WINDOW,
         )
         p.wait()
 
     def do_cleaning(self):
-        os.remove(str(self.file_name) + ".mobi")
+        os.remove(str(self.file_name) + ".epub")
         os.remove(str(self.file_name) + ".html")
         rmtree(self.img_directory)
 
@@ -159,11 +163,14 @@ class KindleSoup:
                     response.raw.decode_content = True
                     copyfileobj(response.raw, out_file)
 
-            except HTTPError:
+            except (HTTPError, Exception):
                 local_path = "404"
 
             if local_path != "404":
-                local_path = self._resize_image(local_path)
+                try:
+                    local_path = self._resize_image(local_path)
+                except Exception as e:
+                    print(e)
 
             image["src"] = quote(os.path.relpath(local_path, DOCUMENTS_DIR))
             image.attrs = {k: v for k, v in image.attrs.items() if k in ["src", "alt"]}
@@ -178,6 +185,9 @@ class KindleSoup:
         title_tag = self.soup.new_tag("title")
         title_tag.string = "w2k " + title
         self.soup.head.insert(1, title_tag)
+        # meta_tag = self.soup.new_tag("meta")
+        # meta_tag.attrs["name"] = "Author"
+        # meta_tag.attrs["content"] = "w2k"
 
     def _insert_title(self, title):
         h1_tag = self.soup.new_tag("h1")
