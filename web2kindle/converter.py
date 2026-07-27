@@ -1,213 +1,320 @@
-import requests
-import urllib.request
-import subprocess
+import logging
 import os
-import time
-from readability import Document
-from bs4 import BeautifulSoup
-from urllib.parse import urlparse, urljoin, quote, urlsplit
-from urllib.error import HTTPError
-from shutil import rmtree, copyfileobj
-from PIL import Image
-from slugify import slugify_filename  # awesome-slugify
 import re
+import subprocess
+import unicodedata
+from hashlib import sha256
 from pathlib import Path
+from shutil import rmtree
+from urllib.parse import quote, unquote, urljoin, urlsplit
+
+import requests
+from bs4 import BeautifulSoup, UnicodeDammit
+from bs4.element import Tag
+from PIL import Image
+from trafilatura import extract, extract_metadata
 
 from .send_to_kindle import send_to_kindle
 
 DOCUMENTS_DIR = Path("documents")
-HEADERS = {"User-agent": "Mozilla/5.0"}
+HEADERS = {"User-Agent": "Mozilla/5.0"}
+IMAGE_MAX_SIZE = (800, 800)
+REQUEST_TIMEOUT_SECONDS = 30
+
+logger = logging.getLogger(__name__)
+
+
+def _safe_filename(value: str, fallback: str) -> str:
+    """Return an ASCII filename containing no path-sensitive characters."""
+    ascii_value = "".join(
+        character
+        for character in unicodedata.normalize("NFKD", value)
+        if character.isascii()
+    )
+    sanitized_value = re.sub(r"[^A-Za-z0-9._-]+", "_", ascii_value)
+    return sanitized_value.strip("._-") or fallback
 
 
 class Converter:
-    def __init__(self, document, url, send_by_mail=False, clean=False):
+    def __init__(
+        self,
+        document: str | bytes,
+        url: str,
+        send_by_mail: bool = False,
+        clean: bool = False,
+    ) -> None:
+        self.document = document
+        self.url = self._normalize_url(url)
         self.send_by_mail = send_by_mail
         self.clean = clean
-        self.document = document
-        self.url = url.split("?")[0].strip("/")
 
-        self.parent_path = urlparse(self.url).scheme + "://" + urlparse(self.url).netloc
-        self.file_name = DOCUMENTS_DIR / f'w2k_{self.url.split("/")[-1].split(".")[0]}'
-        self.img_directory = f"{self.file_name}_img/"
+        parsed_url = urlsplit(self.url)
+        source_name = Path(unquote(parsed_url.path)).stem or parsed_url.netloc
+        safe_name = _safe_filename(source_name, fallback="article")
+        self.file_name = DOCUMENTS_DIR / f"w2k_{safe_name}"
+        self.img_directory = Path(f"{self.file_name}_img")
 
-    def convert(self):
+    @staticmethod
+    def _normalize_url(url: str) -> str:
+        parsed_url = urlsplit(url.strip())
+        return parsed_url._replace(query="", fragment="").geturl()
+
+    @property
+    def html_path(self) -> Path:
+        return Path(f"{self.file_name}.html")
+
+    @property
+    def epub_path(self) -> Path:
+        return Path(f"{self.file_name}.epub")
+
+    def convert(self) -> None:
         self._prepare_directories()
-        encoding = self._get_document_encoding()
-
-        doc = Document(
-            self.document.decode(encoding, "ignore")
-            if type(self.document) is not str
-            else self.document
+        raw_document = self._decode_document()
+        article_html = extract(
+            raw_document,
+            output_format="html",
+            favor_recall=True,
+            include_images=True,
         )
+        if not article_html:
+            raise ValueError("Unable to extract article content from the document")
 
+        metadata = extract_metadata(raw_document)
+        metadata_title = metadata.title if metadata else None
+        title = self._get_title(raw_document, metadata_title)
         kindle_soup = KindleSoup(
-            readability_document=doc,
+            readability_document=article_html,
             source_url=self.url,
             img_directory=self.img_directory,
+            title=title,
         )
-        html_document = kindle_soup.prepare_formatted_html()
-        self._save_html(html_document)
-        self.convert_to_mobi()
+
+        self._save_html(kindle_soup.prepare_formatted_html())
+        self.convert_to_epub()
 
         if self.send_by_mail:
-            send_to_kindle(f"{self.file_name}.epub")
+            send_to_kindle(str(self.epub_path))
         if self.clean:
             self.do_cleaning()
 
-    def _prepare_directories(self):
-        if not os.path.exists(DOCUMENTS_DIR):
-            os.makedirs(DOCUMENTS_DIR)
-        if not os.path.exists(self.img_directory):
-            os.makedirs(self.img_directory)
+    def _prepare_directories(self) -> None:
+        DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
+        self.img_directory.mkdir(parents=True, exist_ok=True)
 
-    def _get_document_encoding(self):
-        soup = BeautifulSoup(self.document, "html.parser")
+    def _decode_document(self) -> str:
+        if isinstance(self.document, str):
+            return self.document
+
+        decoded_document = UnicodeDammit(self.document, is_html=True).unicode_markup
+        if decoded_document is None:
+            raise UnicodeError("Unable to decode the source document")
+        return decoded_document
+
+    @staticmethod
+    def _get_title(raw_document: str, metadata_title: str | None) -> str:
+        if metadata_title:
+            return metadata_title
+
+        soup = BeautifulSoup(raw_document, "html.parser")
+        title_tag = soup.find("title")
+        if isinstance(title_tag, Tag) and title_tag.string:
+            return title_tag.string.strip()
+        return "Article"
+
+    def _save_html(self, html_document: bytes) -> None:
+        self.html_path.write_bytes(html_document)
+
+    def convert_to_epub(self) -> None:
         try:
-            return get_encoding(soup)
-        except ValueError:
-            return soup.original_encoding
+            subprocess.run(
+                [
+                    "ebook-convert",
+                    str(self.html_path),
+                    str(self.epub_path),
+                    "--no-default-epub-cover",
+                ],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(
+                f"ebook-convert failed with exit code {exc.returncode}:\n{exc.stdout}"
+            ) from exc
 
-    def _save_html(self, html_document):
-        with open(str(self.file_name) + ".html", "wb") as f:
-            f.write(html_document)
-
-    def convert_to_mobi(self):
-        CREATE_NO_WINDOW = 0x08000000
-        # if os.path.isfile("kindlegen.exe"):
-        #     kindlegen_path = "kindlegen.exe"
-        # elif os.path.isfile("kindlegen"):
-        #     kindlegen_path = "kindlegen"
-        # else:
-        #     raise KindlegenNotFoundError("cannot find kindlegen")
-        # p = subprocess.Popen(
-        #     [kindlegen_path, str(self.file_name) + ".html"],
-        #     creationflags=CREATE_NO_WINDOW,
-        # )
-        p = subprocess.Popen(
-            ['ebook-convert', str(self.file_name) + ".html", str(self.file_name) + ".epub", "--no-default-epub-cover"],
-            # creationflags=CREATE_NO_WINDOW,
-        )
-        p.wait()
-
-    def do_cleaning(self):
-        os.remove(str(self.file_name) + ".epub")
-        os.remove(str(self.file_name) + ".html")
+    def do_cleaning(self) -> None:
+        self.epub_path.unlink()
+        self.html_path.unlink()
         rmtree(self.img_directory)
 
 
-def get_encoding(soup):
-    """
-    source: http://stackoverflow.com/a/18359215
-    returns encoding from html document's (BeautifulSoup object) meta tags
-    """
-    encod = soup.meta.get("charset")
-    if encod is None:
-        encod = soup.meta.get("content-type")
-        if encod is None:
-            content = soup.meta.get("content")
-            match = re.search("charset=(.*)", content, re.IGNORECASE)
-            if match:
-                encod = match.group(1)
-            else:
-                raise ValueError("unable to find encoding")
-    return encod
+def get_encoding(soup: BeautifulSoup) -> str:
+    """Return the character encoding declared in an HTML meta tag."""
+    charset_meta = soup.find("meta", charset=True)
+    if charset_meta:
+        charset = charset_meta.get("charset")
+        if isinstance(charset, str):
+            return charset
 
+    for meta in soup.find_all("meta", content=True):
+        content = meta.get("content")
+        if not isinstance(content, str):
+            continue
+        match = re.search(
+            r"charset\s*=\s*[\"']?([^;\s\"']+)",
+            content,
+            re.IGNORECASE,
+        )
+        if match:
+            return match.group(1)
 
-class KindlegenNotFoundError(FileNotFoundError):
-    pass
+    raise ValueError("Unable to find a declared document encoding")
 
 
 class KindleSoup:
-    def __init__(self, readability_document, source_url, img_directory):
-        self.document = readability_document
+    def __init__(
+        self,
+        readability_document: str,
+        source_url: str,
+        img_directory: str | Path,
+        title: str,
+    ) -> None:
         self.source_url = source_url
-        self.parent_path = (
-            urlparse(source_url).scheme + "://" + urlparse(source_url).netloc
-        )
-        self.img_directory = img_directory
-        self.soup = BeautifulSoup(readability_document.summary(), "html.parser")
+        self.img_directory = Path(img_directory)
+        self.soup: BeautifulSoup = BeautifulSoup(readability_document, "html.parser")
+        self.title = title
+        self._ensure_document_structure()
 
-    def prepare_formatted_html(self):
-        title = (
-            self.document.title() if len(self.document.title()) > 0 else "Unknown title"
-        )
-        self._add_head(title)
-        if len(self.soup.find_all("h1")) == 0:
-            self._insert_title(title)
+    def _ensure_document_structure(self) -> None:
+        html = self.soup.find("html")
+        if not isinstance(html, Tag):
+            html = self.soup.new_tag("html")
+            for child in list(self.soup.contents):
+                html.append(child.extract())
+            self.soup.append(html)
+
+        body = self.soup.find("body")
+        if not isinstance(body, Tag):
+            body = self.soup.new_tag("body")
+            for child in list(html.contents):
+                if getattr(child, "name", None) != "head":
+                    body.append(child.extract())
+            html.append(body)
+
+    def prepare_formatted_html(self) -> bytes:
+        self._add_head(self.title)
+        if self.soup.find("h1") is None:
+            self._insert_title(self.title)
         self._insert_link_to_source()
         self._process_images()
+        formatted_html = self.soup.prettify(encoding="utf-8")
+        if not isinstance(formatted_html, bytes):
+            raise TypeError("Beautiful Soup returned text despite an output encoding")
+        return formatted_html
 
-        return self.soup.prettify().encode("utf-8")
-
-    def _process_images(self):
+    def _process_images(self) -> None:
         for image in self.soup.find_all("img"):
-            image["src"] = image["src"].strip("//")
-            if "." in image["src"].split("/")[0]:
-                image["src"] = "http://" + image["src"]
-            if len(urlparse(image["src"]).scheme) == 0:
-                image["src"] = urljoin(self.parent_path, image["src"])
-            local_name = image["src"].split("/")[-1].split("?")[0]
-            local_name = slugify_filename(local_name)
+            source = image.get("src")
+            if not isinstance(source, str) or not source:
+                image.decompose()
+                continue
 
-            if "." not in local_name:
-                local_name = "{}.{}".format(int(time.time() * 10 ** 5), local_name)
+            image_url = urljoin(self.source_url, source)
+            if urlsplit(image_url).scheme not in {"http", "https"}:
+                self._keep_safe_image_attributes(image)
+                continue
 
-            local_name = local_name.encode("ascii", "ignore").decode("ascii")
-
-            local_path = os.path.join(self.img_directory, local_name[-50:])
+            local_path = self._download_image(image_url)
+            if local_path is None:
+                image.decompose()
+                continue
 
             try:
-                u = urlsplit(image["src"])
-                response = requests.get(image["src"], stream=True, headers=HEADERS)
-                with open(local_path, "wb") as out_file:
-                    response.raw.decode_content = True
-                    copyfileobj(response.raw, out_file)
+                local_path = self._resize_image(local_path)
+            except OSError, ValueError:
+                logger.warning("Unable to resize image %s", image_url, exc_info=True)
 
-            except (HTTPError, Exception):
-                local_path = "404"
+            relative_path = Path(os.path.relpath(local_path, DOCUMENTS_DIR))
+            image["src"] = quote(relative_path.as_posix())
+            self._keep_safe_image_attributes(image)
 
-            if local_path != "404":
-                try:
-                    local_path = self._resize_image(local_path)
-                except Exception as e:
-                    print(e)
+    def _download_image(self, image_url: str) -> Path | None:
+        parsed_url = urlsplit(image_url)
+        source_name = _safe_filename(
+            Path(unquote(parsed_url.path)).name,
+            fallback="image",
+        )[-40:]
+        url_hash = sha256(image_url.encode()).hexdigest()[:12]
+        local_path = self.img_directory / f"{url_hash}-{source_name}"
 
-            image["src"] = quote(os.path.relpath(local_path, DOCUMENTS_DIR))
-            image.attrs = {k: v for k, v in image.attrs.items() if k in ["src", "alt"]}
+        try:
+            with requests.get(
+                image_url,
+                stream=True,
+                headers=HEADERS,
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            ) as response:
+                response.raise_for_status()
+                with local_path.open("wb") as output_file:
+                    for chunk in response.iter_content(chunk_size=64 * 1024):
+                        if chunk:
+                            output_file.write(chunk)
+        except OSError, requests.RequestException:
+            local_path.unlink(missing_ok=True)
+            logger.warning("Unable to download image %s", image_url, exc_info=True)
+            return None
 
-    def _add_head(self, title):
-        head_tag = self.soup.new_tag("head")
-        self.soup.html.insert(0, head_tag)
+        return local_path
+
+    @staticmethod
+    def _keep_safe_image_attributes(image: Tag) -> None:
+        image.attrs = {
+            key: value for key, value in image.attrs.items() if key in {"src", "alt"}
+        }
+
+    def _add_head(self, title: str) -> None:
+        html = self._required_tag("html")
+        head = self.soup.find("head")
+        if not isinstance(head, Tag):
+            head = self.soup.new_tag("head")
+            html.insert(0, head)
+
         meta_tag = self.soup.new_tag("meta")
         meta_tag.attrs["http-equiv"] = "Content-Type"
         meta_tag.attrs["content"] = "text/html;charset=utf-8"
-        self.soup.head.insert(0, meta_tag)
-        title_tag = self.soup.new_tag("title")
-        title_tag.string = "w2k " + title
-        self.soup.head.insert(1, title_tag)
-        # meta_tag = self.soup.new_tag("meta")
-        # meta_tag.attrs["name"] = "Author"
-        # meta_tag.attrs["content"] = "w2k"
+        head.insert(0, meta_tag)
 
-    def _insert_title(self, title):
+        title_tag = head.find("title")
+        if not isinstance(title_tag, Tag):
+            title_tag = self.soup.new_tag("title")
+            head.append(title_tag)
+        title_tag.string = f"w2k {title}"
+
+    def _insert_title(self, title: str) -> None:
         h1_tag = self.soup.new_tag("h1")
         h1_tag.string = title
-        self.soup.body.insert(0, h1_tag)
+        self._required_tag("body").insert(0, h1_tag)
 
-    def _insert_link_to_source(self):
-        tag = self.soup.new_tag("a", href=self.source_url)
-        tag.string = self.source_url
-        self.soup.body.append(self.soup.new_tag("hr"))
-        self.soup.body.append(tag)
+    def _insert_link_to_source(self) -> None:
+        source_link = self.soup.new_tag("a", href=self.source_url)
+        source_link.string = self.source_url
+        body = self._required_tag("body")
+        body.append(self.soup.new_tag("hr"))
+        body.append(source_link)
 
-    def _resize_image(self, img_path):
-        with Image.open(img_path) as im:
-            im.thumbnail((800, 800), Image.ANTIALIAS)
-            try:
-                im.save(img_path)
-                return img_path
-            except Exception:
-                format = im.format
-                img_path_with_extension = f"{img_path}.{format}"
-                im.save(img_path_with_extension, format=format)
-                return img_path_with_extension
+    def _required_tag(self, name: str) -> Tag:
+        tag = self.soup.find(name)
+        if not isinstance(tag, Tag):
+            raise ValueError(f"Formatted document is missing its {name!r} element")
+        return tag
+
+    @staticmethod
+    def _resize_image(image_path: Path) -> Path:
+        with Image.open(image_path) as image:
+            image_format = image.format
+            if image_format is None:
+                raise ValueError(f"Unknown image format: {image_path}")
+            image.thumbnail(IMAGE_MAX_SIZE, Image.Resampling.LANCZOS)
+            image.save(image_path, format=image_format)
+        return image_path

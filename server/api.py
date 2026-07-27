@@ -21,7 +21,10 @@ class SendArticlePostRequestModel(BaseModel):
 
 
 @app.post("/")
-def send_article_post(page: str, requestBody: SendArticlePostRequestModel):
+def send_article_post(
+    requestBody: SendArticlePostRequestModel,
+    page: str,
+):
     print("Sending article from: {}".format(page))
     c = Converter(document=requestBody.document, url=page, send_by_mail=True)
     c.convert()
