@@ -49,7 +49,7 @@ def create_message_with_attachment(sender, to, subject, message_text, filename):
     return {"raw": base64.urlsafe_b64encode(message.as_bytes()).decode("ascii")}
 
 
-def send_to_kindle(file_name):
+def send_to_kindle(file_name: str) -> str:
     secrets_dir = Path(os.environ.get("WEB2KINDLE_SECRETS_DIR", "."))
     config_path = secrets_dir / "web2kindle.conf"
     token_path = secrets_dir / "token.json"
@@ -59,12 +59,12 @@ def send_to_kindle(file_name):
     try:
         if not config.read(config_path):
             logger.error("Cannot send article: web2kindle.conf is missing")
-            return
+            raise RuntimeError("web2kindle.conf is missing")
         sender = config["web2kindle"]["gmail_address"]
         recipient = config["web2kindle"]["kindle_address"]
     except configparser.Error, KeyError, UnicodeError:
         logger.error("Cannot send article: web2kindle.conf is invalid")
-        return
+        raise RuntimeError("web2kindle.conf is invalid")
 
     creds = None
     if token_path.exists():
@@ -94,6 +94,8 @@ def send_to_kindle(file_name):
 
         response = service.users().messages().send(userId="me", body=msg).execute()
         logger.info("Sent article to Kindle: message_id=%s", response["id"])
+        return response["id"]
 
     except HttpError:
         logger.exception("Failed to send article through Gmail")
+        raise

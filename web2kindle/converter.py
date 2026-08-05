@@ -3,6 +3,7 @@ import mimetypes
 import os
 import re
 import unicodedata
+from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 from shutil import rmtree
@@ -19,12 +20,22 @@ from .epub_writer import EpubImage, write_epub
 from .send_to_kindle import send_to_kindle
 from .trafilatura_wrapper import extract
 
-DOCUMENTS_DIR = Path("documents")
+DOCUMENTS_DIR = Path(
+    os.environ.get("WEB2KINDLE_DOCUMENTS_DIR", "documents")
+).expanduser()
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 IMAGE_MAX_SIZE = (800, 800)
 REQUEST_TIMEOUT_SECONDS = 30
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedArticle:
+    title: str
+    language: str
+    source_url: str
+    html_path: Path
 
 
 def _safe_filename(value: str, fallback: str) -> str:
@@ -45,17 +56,22 @@ class Converter:
         url: str,
         send_by_mail: bool = False,
         clean: bool = False,
+        output_directory: str | Path | None = None,
     ) -> None:
         self.document = document
         self.url = self._normalize_url(url)
         self.send_by_mail = send_by_mail
         self.clean = clean
 
-        parsed_url = urlsplit(self.url)
-        source_name = Path(unquote(parsed_url.path)).stem or parsed_url.netloc
-        safe_name = _safe_filename(source_name, fallback="article")
-        self.file_name = DOCUMENTS_DIR / f"w2k_{safe_name}"
-        self.img_directory = Path(f"{self.file_name}_img")
+        if output_directory is None:
+            parsed_url = urlsplit(self.url)
+            source_name = Path(unquote(parsed_url.path)).stem or parsed_url.netloc
+            safe_name = _safe_filename(source_name, fallback="article")
+            self.file_name = DOCUMENTS_DIR / f"w2k_{safe_name}"
+            self.img_directory = Path(f"{self.file_name}_img")
+        else:
+            self.file_name = Path(output_directory) / "article"
+            self.img_directory = Path(output_directory) / "images"
 
     @staticmethod
     def _normalize_url(url: str) -> str:
@@ -71,6 +87,15 @@ class Converter:
         return Path(f"{self.file_name}.epub")
 
     def convert(self) -> None:
+        self.prepare()
+        self.convert_to_epub()
+
+        if self.send_by_mail:
+            send_to_kindle(str(self.epub_path))
+        if self.clean:
+            self.do_cleaning()
+
+    def prepare(self) -> PreparedArticle:
         self._prepare_directories()
         raw_document = self._decode_document()
         article_html = extract(
@@ -92,13 +117,15 @@ class Converter:
             title=title,
         )
 
-        self._save_html(kindle_soup.prepare_formatted_html())
-        self.convert_to_epub()
-
-        if self.send_by_mail:
-            send_to_kindle(str(self.epub_path))
-        if self.clean:
-            self.do_cleaning()
+        html_document = kindle_soup.prepare_formatted_html()
+        self._save_html(html_document)
+        language = self._document_language(BeautifulSoup(html_document, "html.parser"))
+        return PreparedArticle(
+            title=title,
+            language=language,
+            source_url=self.url,
+            html_path=self.html_path,
+        )
 
     def _prepare_directories(self) -> None:
         DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -137,14 +164,7 @@ class Converter:
             if isinstance(title_tag, Tag)
             else self.html_path.stem
         )
-        html_tag = soup.find("html")
-        language = (
-            html_tag.get("lang", "en")
-            if isinstance(html_tag, Tag)
-            else "en"
-        )
-        if not isinstance(language, str) or not language:
-            language = "en"
+        language = self._document_language(soup)
 
         images = [
             EpubImage(
@@ -168,6 +188,14 @@ class Converter:
             source_url=self.url,
             images=images,
         )
+
+    @staticmethod
+    def _document_language(soup: BeautifulSoup) -> str:
+        html_tag = soup.find("html")
+        language = html_tag.get("lang", "en") if isinstance(html_tag, Tag) else "en"
+        if not isinstance(language, str) or not language:
+            return "en"
+        return language
 
     def _referenced_local_images(
         self,
@@ -272,6 +300,7 @@ class KindleSoup:
     ) -> None:
         self.source_url = source_url
         self.img_directory = Path(img_directory)
+        self.reference_directory = self.img_directory.parent
         self.soup: BeautifulSoup = BeautifulSoup(readability_document, "html.parser")
         self.title = title
         self._ensure_document_structure()
@@ -343,7 +372,9 @@ class KindleSoup:
                 )
                 continue
 
-            relative_path = Path(os.path.relpath(local_path, DOCUMENTS_DIR))
+            relative_path = Path(
+                os.path.relpath(local_path, self.reference_directory)
+            )
             image["src"] = quote(relative_path.as_posix())
             self._keep_safe_image_attributes(image)
             embedded_count += 1

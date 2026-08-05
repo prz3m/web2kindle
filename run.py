@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+from pathlib import Path
 
 import uvicorn
 
@@ -24,8 +25,6 @@ def _configure_logging() -> None:
 
 _configure_logging()
 
-from server.api import app
-
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Run the web2kindle server.")
@@ -34,8 +33,20 @@ def main(argv=None):
         default=".",
         help="directory containing web2kindle.conf, client_secret.json, and token.json",
     )
+    parser.add_argument(
+        "--documents-dir",
+        default=Path(os.environ.get("WEB2KINDLE_DOCUMENTS_DIR", "documents")),
+        type=Path,
+        help="directory for queued articles, generated EPUBs, and working files",
+    )
     args = parser.parse_args(argv)
     os.environ["WEB2KINDLE_SECRETS_DIR"] = args.secrets_dir
+    os.environ["WEB2KINDLE_DOCUMENTS_DIR"] = str(
+        args.documents_dir.expanduser()
+    )
+
+    from server.api import app
+
     uvicorn.run(app, host="127.0.0.1", port=8666)
 
 

@@ -34,37 +34,77 @@ class EpubImage:
     content: bytes
 
 
+@dataclass(frozen=True, slots=True)
+class EpubArticle:
+    archive_path: str
+    title: str
+    language: str
+    source_url: str
+    html_document: bytes
+    images: list[EpubImage]
+
+
 def write_epub(
     output_path: str | Path,
     *,
-    html_document: bytes,
     title: str,
     language: str,
     identifier: str,
-    source_url: str,
-    images: list[EpubImage],
+    articles: list[EpubArticle] | None = None,
+    html_document: bytes | None = None,
+    source_url: str | None = None,
+    images: list[EpubImage] | None = None,
 ) -> None:
-    """Write a single-article EPUB 3 publication without external tools."""
+    """Write an EPUB 3 publication without external tools.
+
+    The single-article arguments remain available for callers that have not yet
+    moved to ``articles``.
+    """
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    validated_images = _validate_images(images)
-    _validate_image_references(html_document, validated_images)
+    if articles is None:
+        if html_document is None or source_url is None:
+            raise ValueError("A publication must contain at least one article")
+        articles = [
+            EpubArticle(
+                archive_path=ARTICLE_PATH,
+                title=title,
+                language=language,
+                source_url=source_url,
+                html_document=html_document,
+                images=images or [],
+            )
+        ]
+    elif html_document is not None or source_url is not None or images is not None:
+        raise ValueError(
+            "Use either 'articles' or the single-article arguments, not both"
+        )
+
+    validated_articles = _validate_articles(articles)
+    image_count = sum(len(article.images) for article in validated_articles)
     logger.info(
-        "Writing EPUB: path=%s title=%r language=%s images=%d",
+        "Writing EPUB: path=%s title=%r language=%s articles=%d images=%d",
         output_path,
         title,
         language,
-        len(validated_images),
+        len(validated_articles),
+        image_count,
     )
 
-    article_document = _prepare_xhtml(html_document, language)
-    navigation_document = _build_navigation_document(title, language)
+    article_documents = [
+        _prepare_xhtml(article.html_document, article.language)
+        for article in validated_articles
+    ]
+    navigation_document = _build_navigation_document(
+        validated_articles,
+        title,
+        language,
+    )
     package_document = _build_package_document(
         title=title,
         language=language,
         identifier=identifier,
-        source_url=source_url,
-        images=validated_images,
+        articles=validated_articles,
     )
     container_document = _build_container_document()
 
@@ -94,16 +134,22 @@ def write_epub(
             archive.writestr("META-INF/container.xml", container_document)
             archive.writestr(f"EPUB/{PACKAGE_PATH}", package_document)
             archive.writestr(f"EPUB/{NAVIGATION_PATH}", navigation_document)
-            archive.writestr(f"EPUB/{ARTICLE_PATH}", article_document)
-            for image in validated_images:
-                archive.writestr(f"EPUB/{image.archive_path}", image.content)
+            for article, article_document in zip(
+                validated_articles,
+                article_documents,
+                strict=True,
+            ):
+                archive.writestr(f"EPUB/{article.archive_path}", article_document)
+                for image in article.images:
+                    archive.writestr(f"EPUB/{image.archive_path}", image.content)
 
         temporary_path.replace(output_path)
         logger.info(
-            "Finished EPUB: path=%s size=%d images=%d",
+            "Finished EPUB: path=%s size=%d articles=%d images=%d",
             output_path,
             output_path.stat().st_size,
-            len(validated_images),
+            len(validated_articles),
+            image_count,
         )
     except Exception:
         logger.exception("Failed to write EPUB: path=%s", output_path)
@@ -112,37 +158,57 @@ def write_epub(
         temporary_path.unlink(missing_ok=True)
 
 
-def _validate_images(images: list[EpubImage]) -> list[EpubImage]:
-    reserved_paths = {ARTICLE_PATH, NAVIGATION_PATH, PACKAGE_PATH}
+def _validate_articles(articles: list[EpubArticle]) -> list[EpubArticle]:
+    if not articles:
+        raise ValueError("A publication must contain at least one article")
+
+    reserved_paths = {NAVIGATION_PATH, PACKAGE_PATH}
     seen_paths: set[str] = set()
 
-    for image in images:
-        archive_path = PurePosixPath(image.archive_path)
-        if (
-            not image.archive_path
-            or "\\" in image.archive_path
-            or archive_path.is_absolute()
-            or archive_path.as_posix() != image.archive_path
-            or any(part in {"", ".", ".."} for part in archive_path.parts)
-            or image.archive_path in reserved_paths
-        ):
-            raise ValueError(f"Unsafe EPUB image path: {image.archive_path!r}")
-        if image.archive_path in seen_paths:
-            raise ValueError(f"Duplicate EPUB image path: {image.archive_path!r}")
-        if not image.media_type.startswith("image/"):
-            raise ValueError(f"Invalid EPUB image media type: {image.media_type!r}")
-        seen_paths.add(image.archive_path)
+    for article in articles:
+        _validate_archive_path(article.archive_path, "article")
+        if article.archive_path in reserved_paths:
+            raise ValueError(f"Reserved EPUB article path: {article.archive_path!r}")
+        if article.archive_path in seen_paths:
+            raise ValueError(f"Duplicate EPUB path: {article.archive_path!r}")
+        seen_paths.add(article.archive_path)
 
-    return images
+        for image in article.images:
+            _validate_archive_path(image.archive_path, "image")
+            if image.archive_path in reserved_paths:
+                raise ValueError(f"Reserved EPUB image path: {image.archive_path!r}")
+            if image.archive_path in seen_paths:
+                raise ValueError(f"Duplicate EPUB path: {image.archive_path!r}")
+            if not image.media_type.startswith("image/"):
+                raise ValueError(
+                    f"Invalid EPUB image media type: {image.media_type!r}"
+                )
+            seen_paths.add(image.archive_path)
+
+        _validate_image_references(article)
+
+    return articles
+
+
+def _validate_archive_path(value: str, kind: str) -> None:
+    archive_path = PurePosixPath(value)
+    if (
+        not value
+        or "\\" in value
+        or archive_path.is_absolute()
+        or archive_path.as_posix() != value
+        or any(part in {"", ".", ".."} for part in archive_path.parts)
+    ):
+        raise ValueError(f"Unsafe EPUB {kind} path: {value!r}")
 
 
 def _validate_image_references(
-    html_document: bytes,
-    images: list[EpubImage],
+    article: EpubArticle,
 ) -> None:
-    packaged_paths = {image.archive_path for image in images}
+    packaged_paths = {image.archive_path for image in article.images}
     referenced_paths: set[str] = set()
-    soup = BeautifulSoup(html_document, "html.parser")
+    article_directory = PurePosixPath(article.archive_path).parent
+    soup = BeautifulSoup(article.html_document, "html.parser")
 
     for image_tag in soup.find_all("img"):
         source = image_tag.get("src")
@@ -158,7 +224,8 @@ def _validate_image_references(
             )
             continue
 
-        archive_path = unquote(parsed_source.path).lstrip("/")
+        referenced_path = PurePosixPath(unquote(parsed_source.path))
+        archive_path = (article_directory / referenced_path).as_posix()
         referenced_paths.add(archive_path)
         if archive_path not in packaged_paths:
             logger.error(
@@ -225,8 +292,7 @@ def _build_package_document(
     title: str,
     language: str,
     identifier: str,
-    source_url: str,
-    images: list[EpubImage],
+    articles: list[EpubArticle],
 ) -> bytes:
     package = ElementTree.Element(
         "package",
@@ -245,7 +311,11 @@ def _build_package_document(
     identifier_tag.text = identifier
     ElementTree.SubElement(metadata, f"{{{DC_NAMESPACE}}}title").text = title
     ElementTree.SubElement(metadata, f"{{{DC_NAMESPACE}}}language").text = language
-    ElementTree.SubElement(metadata, f"{{{DC_NAMESPACE}}}source").text = source_url
+    for source_url in dict.fromkeys(article.source_url for article in articles):
+        ElementTree.SubElement(
+            metadata,
+            f"{{{DC_NAMESPACE}}}source",
+        ).text = source_url
     modified = ElementTree.SubElement(
         metadata,
         "meta",
@@ -269,32 +339,51 @@ def _build_package_document(
             "properties": "nav",
         },
     )
-    ElementTree.SubElement(
-        manifest,
-        "item",
-        {
-            "id": "article",
-            "href": ARTICLE_PATH,
-            "media-type": "application/xhtml+xml",
-        },
-    )
-    for index, image in enumerate(images, start=1):
+    for article_index, article in enumerate(articles, start=1):
+        article_id = (
+            "article" if len(articles) == 1 else f"article-{article_index}"
+        )
         ElementTree.SubElement(
             manifest,
             "item",
             {
-                "id": f"image-{index}",
-                "href": image.archive_path,
-                "media-type": image.media_type,
+                "id": article_id,
+                "href": article.archive_path,
+                "media-type": "application/xhtml+xml",
             },
         )
+        for image_index, image in enumerate(article.images, start=1):
+            image_id = (
+                f"image-{image_index}"
+                if len(articles) == 1
+                else f"image-{article_index}-{image_index}"
+            )
+            ElementTree.SubElement(
+                manifest,
+                "item",
+                {
+                    "id": image_id,
+                    "href": image.archive_path,
+                    "media-type": image.media_type,
+                },
+            )
 
     spine = ElementTree.SubElement(package, "spine")
-    ElementTree.SubElement(
-        spine,
-        "itemref",
-        {"idref": "article"},
-    )
+    if len(articles) > 1:
+        ElementTree.SubElement(
+            spine,
+            "itemref",
+            {"idref": "navigation"},
+        )
+    for article_index, _article in enumerate(articles, start=1):
+        article_id = (
+            "article" if len(articles) == 1 else f"article-{article_index}"
+        )
+        ElementTree.SubElement(
+            spine,
+            "itemref",
+            {"idref": article_id},
+        )
     return ElementTree.tostring(
         package,
         encoding="utf-8",
@@ -302,7 +391,11 @@ def _build_package_document(
     )
 
 
-def _build_navigation_document(title: str, language: str) -> bytes:
+def _build_navigation_document(
+    articles: list[EpubArticle],
+    title: str,
+    language: str,
+) -> bytes:
     html = ElementTree.Element(
         "html",
         {
@@ -312,22 +405,24 @@ def _build_navigation_document(title: str, language: str) -> bytes:
         },
     )
     head = ElementTree.SubElement(html, "head")
-    ElementTree.SubElement(head, "title").text = "Contents"
+    ElementTree.SubElement(head, "title").text = title
     body = ElementTree.SubElement(html, "body")
+    ElementTree.SubElement(body, "h1").text = title
     navigation = ElementTree.SubElement(
         body,
         "nav",
         {f"{{{EPUB_NAMESPACE}}}type": "toc", "id": "toc"},
     )
-    ElementTree.SubElement(navigation, "h1").text = "Contents"
+    ElementTree.SubElement(navigation, "h2").text = "Contents"
     ordered_list = ElementTree.SubElement(navigation, "ol")
-    list_item = ElementTree.SubElement(ordered_list, "li")
-    article_link = ElementTree.SubElement(
-        list_item,
-        "a",
-        {"href": ARTICLE_PATH},
-    )
-    article_link.text = title
+    for article in articles:
+        list_item = ElementTree.SubElement(ordered_list, "li")
+        article_link = ElementTree.SubElement(
+            list_item,
+            "a",
+            {"href": article.archive_path},
+        )
+        article_link.text = article.title
     return ElementTree.tostring(
         html,
         encoding="utf-8",

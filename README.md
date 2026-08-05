@@ -1,6 +1,6 @@
 # web2kindle
 
-Send articles to your kindle.
+Collect articles into an EPUB and send it to your Kindle.
 
 ## Why?
 
@@ -51,24 +51,59 @@ Copy and edit the configuration file in the same private directory:
 cp web2kindle.conf.template ~/.secrets/web2kindle.conf
 ```
 
-Run the server with the external secrets directory:
+Create a directory outside the checkout for generated files and run the server
+with both external directories:
 
 ```console
-mise run serve -- --secrets-dir ~/.secrets
+mkdir -p ~/.local/share/web2kindle
+mise run serve -- --secrets-dir ~/.secrets --documents-dir ~/.local/share/web2kindle
 ```
 
 If `--secrets-dir` is omitted, the current working directory is used for
-backwards compatibility.
+backwards compatibility. If `--documents-dir` is omitted, the existing
+`documents` directory is used. `WEB2KINDLE_DOCUMENTS_DIR` can also provide the
+default documents directory.
 
-### Userscript (recommended)
+To verify that the server and VS Code port forwarding are reachable, open
+<http://127.0.0.1:8666/health> in the browser or run:
 
-The userscript is recommended because it bypasses CSP restrictions that can prevent the direct bookmarklet from working.
+```console
+curl http://127.0.0.1:8666/health
+```
 
-1. Install [`bookmarklet/userscript.js`](bookmarklet/userscript.js) with a userscript manager such as Tampermonkey.
-2. Create a bookmark whose URL is the contents of [`bookmarklet/bookmarklet_userscript.js`](bookmarklet/bookmarklet_userscript.js).
+The response should be `{"status":"ok"}`.
 
-Open an article and click the bookmark to send it.
+### Userscript
 
-### Direct bookmarklet
+The userscript uses its manager's cross-origin request API to reach the local
+web2kindle server without enabling CORS.
 
-Alternatively, use [`bookmarklet/bookmarklet.js`](bookmarklet/bookmarklet.js) as a direct bookmarklet.
+1. Install [`bookmarklet/userscript.js`](bookmarklet/userscript.js) with Violentmonkey.
+2. Create an **Add to Kindle queue** bookmark whose URL is the contents of [`bookmarklet/bookmarklet_userscript.js`](bookmarklet/bookmarklet_userscript.js).
+3. Create a **Send Kindle queue** bookmark whose URL is the contents of [`bookmarklet/bookmarklet_send_userscript.js`](bookmarklet/bookmarklet_send_userscript.js).
+4. Create a **Send current article now** bookmark whose URL is the contents of [`bookmarklet/bookmarklet_send_now_userscript.js`](bookmarklet/bookmarklet_send_now_userscript.js).
+
+The bookmarks only dispatch events to the installed userscript. After updating
+`userscript.js`, replace or reinstall its installed copy in Violentmonkey as
+well; changing the bookmark URLs does not update the userscript logic.
+
+When upgrading from the older `http://tampermonkey.net/` namespace, remove or
+disable that installed copy before installing the current `web2kindle`
+version. Otherwise both scripts may react to the same bookmark event.
+
+Click **Add to Kindle queue** on every article you want to collect. Click
+**Send Kindle queue** to build one EPUB with a table of contents and send all
+pending articles. Articles are moved out of the pending queue only after Gmail
+accepts the message.
+
+Collection EPUBs open on an inline table of contents and use a UTC timestamped
+title such as `web2kindle — 2026-08-05 14:30 UTC`.
+
+Use **Send current article now** when an article should be converted and sent
+immediately without being added to or changing the queue.
+
+## Queue files
+
+Prepared articles are stored under `<documents-dir>/queue/pending`. After a
+successful send they are moved under `<documents-dir>/queue/sent/<batch-id>`.
+Generated EPUBs are kept under `<documents-dir>/queue/epubs`.
