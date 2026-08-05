@@ -31,27 +31,34 @@ Go to Amazon's **Manage Your Content and Devices** settings. Under **Personal Do
 
 Follow Google's [Gmail API Python quickstart](https://developers.google.com/workspace/gmail/api/quickstart/python) to enable the Gmail API, configure the OAuth consent screen, and create a **Desktop app** OAuth client.
 
-Download the client JSON file as `client_secret.json` into the repository root, then authorize web2kindle:
+Keep the downloaded client JSON and generated token outside the repository so tools
+working in this checkout cannot read them. For example, create a private directory
+elsewhere and point web2kindle at it:
 
 ```console
-mise run get_new_token
+mkdir -p ~/.secrets
+chmod 700 ~/.secrets
+mise run get_new_token -- --secrets-dir ~/.secrets
 ```
 
-The authorization flow creates `token.json`.
+The authorization flow creates `token.json` in that directory.
 
 ## Usage
 
-Copy and edit the configuration file:
+Copy and edit the configuration file in the same private directory:
 
 ```console
-cp web2kindle.conf.template web2kindle.conf
+cp web2kindle.conf.template ~/.secrets/web2kindle.conf
 ```
 
-Run the server:
+Run the server with the external secrets directory:
 
 ```console
-mise run serve
+mise run serve -- --secrets-dir ~/.secrets
 ```
+
+If `--secrets-dir` is omitted, the current working directory is used for
+backwards compatibility.
 
 ### Userscript (recommended)
 

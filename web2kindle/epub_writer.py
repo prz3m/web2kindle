@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from tempfile import NamedTemporaryFile
 from urllib.parse import unquote, urlsplit
@@ -183,11 +183,11 @@ def _prepare_xhtml(html_document: bytes, language: str) -> bytes:
 
     html_tag = soup.find("html")
     if not isinstance(html_tag, Tag):
-        raise ValueError("EPUB article is missing its 'html' element")
+        raise TypeError("EPUB article is missing its 'html' element")
     if not isinstance(soup.find("head"), Tag):
-        raise ValueError("EPUB article is missing its 'head' element")
+        raise TypeError("EPUB article is missing its 'head' element")
     if not isinstance(soup.find("body"), Tag):
-        raise ValueError("EPUB article is missing its 'body' element")
+        raise TypeError("EPUB article is missing its 'body' element")
 
     html_tag["xmlns"] = XHTML_NAMESPACE
     html_tag["lang"] = language

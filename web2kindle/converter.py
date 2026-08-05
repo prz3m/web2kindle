@@ -436,7 +436,7 @@ class KindleSoup:
     def _required_tag(self, name: str) -> Tag:
         tag = self.soup.find(name)
         if not isinstance(tag, Tag):
-            raise ValueError(f"Formatted document is missing its {name!r} element")
+            raise TypeError(f"Formatted document is missing its {name!r} element")
         return tag
 
     @staticmethod

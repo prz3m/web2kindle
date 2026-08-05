@@ -9,5 +9,5 @@ UV_PYTHON = { value = "{{ tools.python.path }}", tools = true }
 python.uv_venv_auto = "create|source"
 
 [tasks]
-serve = "uvicorn --port 8666 run:app"
+serve = "python run.py"
 get_new_token = "python get_new_token.py"

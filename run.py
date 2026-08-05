@@ -1,5 +1,8 @@
+import argparse
 import logging
 import os
+
+import uvicorn
 
 
 def _configure_logging() -> None:
@@ -21,4 +24,20 @@ def _configure_logging() -> None:
 
 _configure_logging()
 
-from server.api import app  # noqa: E402, F401
+from server.api import app
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Run the web2kindle server.")
+    parser.add_argument(
+        "--secrets-dir",
+        default=".",
+        help="directory containing web2kindle.conf, client_secret.json, and token.json",
+    )
+    args = parser.parse_args(argv)
+    os.environ["WEB2KINDLE_SECRETS_DIR"] = args.secrets_dir
+    uvicorn.run(app, host="127.0.0.1", port=8666)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,11 +1,12 @@
 import base64
 import configparser
 import logging
-import os.path
+import os
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from pathlib import Path
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -49,28 +50,43 @@ def create_message_with_attachment(sender, to, subject, message_text, filename):
 
 
 def send_to_kindle(file_name):
+    secrets_dir = Path(os.environ.get("WEB2KINDLE_SECRETS_DIR", "."))
+    config_path = secrets_dir / "web2kindle.conf"
+    token_path = secrets_dir / "token.json"
+    client_secret_path = secrets_dir / "client_secret.json"
+
+    config = configparser.ConfigParser()
+    try:
+        if not config.read(config_path):
+            logger.error("Cannot send article: web2kindle.conf is missing")
+            return
+        sender = config["web2kindle"]["gmail_address"]
+        recipient = config["web2kindle"]["kindle_address"]
+    except configparser.Error, KeyError, UnicodeError:
+        logger.error("Cannot send article: web2kindle.conf is invalid")
+        return
+
     creds = None
-    if os.path.exists("token.json"):
-        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+    if token_path.exists():
+        creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             logger.info("Refreshing expired Gmail credentials")
             creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file(
-                "client_secret.json",
+                str(client_secret_path),
                 SCOPES,
             )
             creds = flow.run_local_server(port=0)
-        with open("token.json", "w") as token:
-            token.write(creds.to_json())
+        token_path.write_text(creds.to_json(), encoding="utf-8")
 
     try:
         service = build("gmail", "v1", credentials=creds)
 
         msg = create_message_with_attachment(
-            config["web2kindle"]["gmail_address"],
-            config["web2kindle"]["kindle_address"],
+            sender,
+            recipient,
             "",
             "",
             file_name,
